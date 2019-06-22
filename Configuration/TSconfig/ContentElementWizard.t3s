@@ -1,7 +1,7 @@
 mod.wizards.newContentElement.wizardItems.plugins {
   elements {
     dpnglossary_glossary {
-      iconIdentifier = ext-dpn_glossary-wizard-icon
+      iconIdentifier = ext-dpnglossary-wizard-icon
       title = LLL:EXT:dpn_glossary/Resources/Private/Language/locallang.xlf:tx_dpnglossary.wizard_glossary_title
       description = LLL:EXT:dpn_glossary/Resources/Private/Language/locallang.xlf:tx_dpnglossary.wizard_glossary_description
       tt_content_defValues {
@@ -11,7 +11,7 @@ mod.wizards.newContentElement.wizardItems.plugins {
     }
 
     dpnglossary_preview {
-      iconIdentifier = ext-dpn_glossary-preview-wizard-icon
+      iconIdentifier = ext-dpnglossary-preview-wizard-icon
       title = LLL:EXT:dpn_glossary/Resources/Private/Language/locallang.xlf:tx_dpnglossary.wizard_preview_title
       description = LLL:EXT:dpn_glossary/Resources/Private/Language/locallang.xlf:tx_dpnglossary.wizard_preview_description
       tt_content_defValues {

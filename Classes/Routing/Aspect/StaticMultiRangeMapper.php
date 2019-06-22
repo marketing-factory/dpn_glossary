@@ -14,6 +14,8 @@ namespace Featdd\DpnGlossary\Routing\Aspect;
  *
  ***/
 
+use InvalidArgumentException;
+use LengthException;
 use TYPO3\CMS\Core\Routing\Aspect\StaticMappableAspectInterface;
 
 /**
@@ -37,10 +39,10 @@ class StaticMultiRangeMapper implements StaticMappableAspectInterface
             $end = $range['end'] ?? null;
 
             if (false === \is_string($start)) {
-                throw new \InvalidArgumentException('start must be string', 1537277163);
+                throw new InvalidArgumentException('start must be string', 1537277163);
             }
             if (false === \is_string($end)) {
-                throw new \InvalidArgumentException('end must be string', 1537277164);
+                throw new InvalidArgumentException('end must be string', 1537277164);
             }
 
             $this->ranges[] = $this->buildRange($start, $end);
@@ -72,7 +74,7 @@ class StaticMultiRangeMapper implements StaticMappableAspectInterface
     protected function respondWhenInRange(string $value): ?string
     {
         foreach ($this->ranges as $range) {
-            if (true === \in_array($value, $range, true)) {
+            if (true === in_array($value, $range, true)) {
                 return $value;
             }
         }
@@ -90,7 +92,7 @@ class StaticMultiRangeMapper implements StaticMappableAspectInterface
         $range = array_map('\strval', range($start, $end));
 
         if (1000 < \count($range)) {
-            throw new \LengthException(
+            throw new LengthException(
                 'Range is larger than 1000 items',
                 1537696771
             );

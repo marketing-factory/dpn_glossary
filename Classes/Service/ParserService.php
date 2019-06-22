@@ -14,10 +14,11 @@ namespace Featdd\DpnGlossary\Service;
  *
  ***/
 
+use Closure;
 use Featdd\DpnGlossary\Domain\Model\Term;
 use Featdd\DpnGlossary\Domain\Repository\TermRepository;
 use Featdd\DpnGlossary\Utility\ObjectUtility;
-use Featdd\DpnGlossary\Utility\ParserUtility;
+use Featdd\HtmlTermWrapper\HtmlTermWrapper;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\Context\Exception\AspectNotFoundException;
@@ -35,11 +36,7 @@ use TYPO3\CMS\Frontend\ContentObject\ContentObjectRenderer;
 class ParserService implements SingletonInterface
 {
     public const REGEX_DELIMITER = '/';
-
-    /**
-     * tags to be always ignored by parsing
-     */
-    public static $alwaysIgnoreParentTags = [
+    public const ALWAYS_IGNORE_PARENT_TAGS = [
         'a',
         'script',
     ];
@@ -48,6 +45,11 @@ class ParserService implements SingletonInterface
      * @var ContentObjectRenderer
      */
     protected $contentObjectRenderer;
+
+    /**
+     * @var \Featdd\HtmlTermWrapper\HtmlTermWrapper
+     */
+    protected $htmlTermWrapper;
 
     /**
      * @var array
@@ -78,9 +80,6 @@ class ParserService implements SingletonInterface
         // Get Configuration Manager
         /** @var \TYPO3\CMS\Extbase\Configuration\ConfigurationManager $configurationManager */
         $configurationManager = ObjectUtility::makeInstance(ConfigurationManager::class);
-        // Get Cache Manager
-        /** @var \TYPO3\CMS\Core\Cache\CacheManager $cacheManager */
-        $cacheManager = ObjectUtility::makeInstance(CacheManager::class);
         // Inject Content Object Renderer
         $this->contentObjectRenderer = ObjectUtility::makeInstance(ContentObjectRenderer::class);
         // Get Query Settings
@@ -99,9 +98,7 @@ class ParserService implements SingletonInterface
             $this->settings = GeneralUtility::removeDotsFromTS($this->typoScriptConfiguration['settings.']);
             // Set StoragePid in the query settings object
             $querySettings->setStoragePageIds(
-                GeneralUtility::trimExplode(
-                    ',',
-                    $this->typoScriptConfiguration['persistence.']['storagePid'])
+                GeneralUtility::trimExplode(',', $this->typoScriptConfiguration['persistence.']['storagePid'])
             );
 
             try {
@@ -121,33 +118,25 @@ class ParserService implements SingletonInterface
 
             //Find all terms
             if (false === (bool) $this->settings['useCachingFramework']) {
-                $terms = $termRepository->findByNameLength();
+                $terms = $termRepository->findByNameLength(true);
             } else {
+                /** @var \TYPO3\CMS\Core\Cache\Frontend\FrontendInterface $cacheManager */
+                $cache = ObjectUtility::makeInstance(CacheManager::class)->getCache('dpnglossary_termscache');
                 $cacheIdentifier = sha1('termsByNameLength' . $querySettings->getLanguageUid());
-                $cache = $cacheManager->getCache('dpnglossary_termscache');
                 $terms = $cache->get($cacheIdentifier);
 
                 // If $terms is null, it hasn't been cached. Calculate the value and store it in the cache:
                 if ($terms === false) {
-                    $terms = $termRepository->findByNameLength();
+                    $terms = $termRepository->findByNameLength(true);
                     // Save value in cache
                     $cache->set($cacheIdentifier, $terms, ['dpnglossary_termscache']);
                 }
             }
 
-            //Sort terms with an individual counter for max replacement per page
-            /** @var Term $term */
-            foreach ($terms as $term) {
-                $maxReplacements = -1 === $term->getMaxReplacements()
-                    ? (int) $this->settings['maxReplacementPerPage']
-                    : $term->getMaxReplacements();
-
-                $this->terms[] = [
-                    'term' => $term,
-                    'replacements' => $maxReplacements,
-                ];
-            }
+            $this->terms = $terms;
         }
+
+        $this->htmlTermWrapper = new HtmlTermWrapper(...$this->terms);
     }
 
     /**
@@ -155,21 +144,17 @@ class ParserService implements SingletonInterface
      * or false if parsers has to be aborted
      *
      * @param string $html
-     * @return string|null
-     * @throws Exception
+     * @return string
+     * @throws \Featdd\HtmlTermWrapper\Exception\ParserException
      */
     public function pageParser(string $html): string
     {
         // extract Pids which should be parsed
-        $parsingPids = GeneralUtility::intExplode(',', $this->settings['parsingPids']);
+        $parsingPids = GeneralUtility::intExplode(',', $this->settings['parsingPids'], true);
         // extract Pids which should NOT be parsed
-        $excludePids = GeneralUtility::intExplode(',', $this->settings['parsingExcludePidList']);
+        $excludePids = GeneralUtility::intExplode(',', $this->settings['parsingExcludePidList'], true);
         // Get Tags which content should be parsed
-        $tags = GeneralUtility::trimExplode(',', $this->settings['parsingTags']);
-        // Remove "a" & "script" from parsingTags if it was added unknowingly
-        if (true === \in_array(self::$alwaysIgnoreParentTags, $tags, true)) {
-            $tags = array_diff($tags, self::$alwaysIgnoreParentTags);
-        }
+        $parsingTags = GeneralUtility::trimExplode(',', $this->settings['parsingTags'], true);
 
         $currentPageId = (int) $GLOBALS['TSFE']->id;
         $currentPageType = (int) $GLOBALS['TSFE']->type;
@@ -181,7 +166,7 @@ class ParserService implements SingletonInterface
             // Pagetype not 0
             0 !== $currentPageType ||
             // no tags to parse given
-            0 === \count($tags) ||
+            0 === \count($parsingTags) ||
             // no terms have been found
             0 === \count($this->terms) ||
             // no config is given
@@ -198,225 +183,15 @@ class ParserService implements SingletonInterface
             return $html;
         }
 
-        // Classes which are not allowed for the parsing tag
-        $forbiddenParsingTagClasses = array_filter(
-            GeneralUtility::trimExplode(',', $this->settings['forbiddenParsingTagClasses'])
+        $this->htmlTermWrapper->setParsingTags($parsingTags);
+        $this->htmlTermWrapper::$alwaysIgnoreParentTags = static::ALWAYS_IGNORE_PARENT_TAGS;
+        $this->htmlTermWrapper::$forbiddenParentTags = GeneralUtility::trimExplode(',', $this->settings['forbiddenParentTags'], true);
+        $this->htmlTermWrapper::$forbiddenParsingTagClasses = GeneralUtility::trimExplode(',', $this->settings['forbiddenParsingTagClasses'], true);
+
+        return $this->htmlTermWrapper->parseHtml(
+            $html,
+            Closure::fromCallable([$this, 'termWrapper'])
         );
-
-        // Tags which are not allowed as direct parent for a parsingTag
-        $forbiddenParentTags = array_filter(GeneralUtility::trimExplode(',', $this->settings['forbiddenParentTags']));
-
-        // Add "a" if unknowingly deleted to prevent errors
-        if (false === \in_array(self::$alwaysIgnoreParentTags, $forbiddenParentTags, true)) {
-            $forbiddenParentTags = array_unique(
-                array_merge($forbiddenParentTags, self::$alwaysIgnoreParentTags)
-            );
-        }
-
-        //Create new DOMDocument
-        $DOM = new \DOMDocument();
-
-        // Prevent crashes caused by HTML5 entities with internal errors
-        libxml_use_internal_errors(true);
-
-        // Load Page HTML in DOM and check if HTML is valid else abort
-        // use XHTML tag for avoiding UTF-8 encoding problems
-        if (
-            false === $DOM->loadHTML(
-                '<?xml encoding="UTF-8">' . ParserUtility::protectLinkAndSrcPathsFromDOM(
-                    ParserUtility::protectScrtiptsAndCommentsFromDOM(
-                        $html
-                    )
-                )
-            )
-        ) {
-            throw new Exception('Parsers DOM Document could\'nt load the html');
-        }
-
-        // remove unnecessary whitespaces in nodes (no visible whitespace)
-        $DOM->preserveWhiteSpace = false;
-
-        // Init DOMXPath with main DOMDocument
-        $DOMXPath = new \DOMXPath($DOM);
-
-        /** @var \DOMNode $DOMBody */
-        $DOMBody = $DOM->getElementsByTagName('body')->item(0);
-
-        $wrapperClosure = \Closure::fromCallable([$this, 'termWrapper']);
-
-        // iterate over tags which are defined to be parsed
-        foreach ($tags as $tag) {
-            $xpathQuery = '//' . $tag;
-
-            // if classes given add them to xpath query
-            if (0 < \count($forbiddenParsingTagClasses)) {
-                $xpathQuery .= '[not(contains(@class, \'' .
-                    implode(
-                        '\') or contains(@class, \'',
-                        $forbiddenParsingTagClasses
-                    ) .
-                    '\'))]';
-            }
-
-            // extract the tags
-            $DOMTags = $DOMXPath->query($xpathQuery, $DOMBody);
-            // call the nodereplacer for each node to parse its content
-            /** @var \DOMNode $DOMTag */
-            foreach ($DOMTags as $DOMTag) {
-                // get parent tags from root tree string
-                $parentTags = explode(
-                    '/',
-                    preg_replace(
-                        '#\[([^\]]*)\]#',
-                        '',
-                        substr($DOMTag->parentNode->getNodePath(), 1)
-                    )
-                );
-
-                // check if element is children of a forbidden parent
-                if (false === \in_array($parentTags, $forbiddenParentTags, true)) {
-                    /** @var \DOMNode $childNode */
-                    for ($i = 0; $i < $DOMTag->childNodes->length; $i++) {
-                        $childNode = $DOMTag->childNodes->item($i);
-
-                        if ($childNode instanceof \DOMText) {
-                            ParserUtility::domTextReplacer(
-                                $childNode,
-                                $this->textParser(
-                                    $childNode->ownerDocument->saveHTML($childNode),
-                                    $wrapperClosure
-                                )
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        // return the parsed html page and remove XHTML tag which is not needed anymore
-        return str_replace(
-            '<?xml encoding="UTF-8">',
-            '',
-            ParserUtility::protectScriptsAndCommentsFromDOMReverse(
-                ParserUtility::protectLinkAndSrcPathsFromDOMReverse(
-                    $DOM->saveHTML()
-                )
-            )
-        );
-    }
-
-    /**
-     * Parse the extracted html for terms
-     *
-     * @param string $text the text to be parsed
-     * @param \Closure $wrapperClosure the wrapping function for parsed terms as callback
-     * @return string
-     */
-    public function textParser(string $text, \Closure $wrapperClosure): string
-    {
-        $text = preg_replace('#\x{00a0}#iu', '&nbsp;', $text);
-        // Iterate over terms and search matches for each of them
-        foreach ($this->terms as &$term) {
-            /** @var \Featdd\DpnGlossary\Domain\Model\Term $termObject */
-            $termObject = clone $term['term'];
-            $replacements = &$term['replacements'];
-
-            if (true === $termObject->getExcludeFromParsing()) {
-                continue;
-            }
-
-            //Check replacement counter
-            if (0 !== $term['replacements']) {
-                $this->regexParser($text, $termObject, $replacements, $wrapperClosure);
-
-                if (true === (boolean) $this->settings['parseSynonyms']) {
-                    /** @var \Featdd\DpnGlossary\Domain\Model\Synonym $synonym */
-                    foreach ($termObject->getSynonyms() as $synonym) {
-                        $termObject->setName(
-                            $synonym->getName()
-                        );
-
-                        if (true === (boolean) $this->settings['maxReplacementPerPageRespectSynonyms']) {
-                            $this->regexParser($text, $termObject, $replacements, $wrapperClosure);
-                        } else {
-                            $noReplacementCount = -1;
-                            $this->regexParser($text, $termObject, $noReplacementCount, $wrapperClosure);
-                        }
-                    }
-                }
-            }
-        }
-
-        return $text;
-    }
-
-    /**
-     * Regex parser for terms on a text string
-     *
-     * @param string $text
-     * @param Term $term
-     * @param integer $replacements
-     * @param \Closure $wrapperClosure
-     */
-    protected function regexParser(string &$text, Term $term, int &$replacements, \Closure $wrapperClosure): void
-    {
-        // Try simple search first to save performance
-        if (false === mb_stripos($text, $term->getName())) {
-            return;
-        }
-
-        /*
-         * Regex Explanation:
-         * Group 1: (^|[\s\>[:punct:]]|\<br*\>)
-         *  ^         = can be begin of the string
-         *  \G        = can match an other matchs end
-         *  \s        = can have space before term
-         *  \>        = can have a > before term (end of some tag)
-         *  [:punct:] = can have punctuation characters like .,?!& etc. before term
-         *  \<br*\>   = can have a "br" tag before
-         *
-         * Group 2: (' . preg_quote($term->getName()) . ')
-         *  The term to find, preg_quote() escapes special chars
-         *
-         * Group 3: ($|[\s\<[:punct:]]|\<br*\>)
-         *  Same as Group 1 but with end of string and < (start of some tag)
-         *
-         * Group 4: (?![^<]*>|[^<>]*<\/)
-         *  This Group protects any children element of the tag which should be parsed
-         *  ?!        = negative lookahead
-         *  [^<]*>    = match is between < & > and some other character
-         *              avoids parsing terms in self closing tags
-         *              example: <TERM> will work <TERM > not
-         *  [^<>]*<\/ = match is between some tag and tag ending
-         *              example: < or >TERM</>
-         *
-         * Flags:
-         * i = ignores camel case
-         */
-        $regex = self::REGEX_DELIMITER .
-            '(^|\G|[\s\>[:punct:]]|\<br*\>)' .
-            '(' . preg_quote($term->getName(), self::REGEX_DELIMITER) . ')' .
-            '($|[\s\<[:punct:]]|\<br*\>)' .
-            '(?![^<]*>|[^<>]*<\/)' .
-            self::REGEX_DELIMITER .
-            (false === $term->getCaseSensitive() ? 'i' : '');
-
-        // replace callback
-        $callback = function (array $match) use ($term, &$replacements, $wrapperClosure) {
-            //decrease replacement counter
-            if (0 < $replacements) {
-                $replacements--;
-            }
-
-            // Use term match to keep original camel case
-            $term->setName($match[2]);
-
-            // Wrap replacement with original chars
-            return $match[1] . $wrapperClosure($term) . $match[3];
-        };
-
-        // Use callback to keep allowed chars around the term and his camel case
-        $text = (string) preg_replace_callback($regex, $callback, $text, $replacements);
     }
 
     /**

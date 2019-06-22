@@ -38,17 +38,22 @@ class TermRepository extends Repository
     /**
      * find all terms sorted by name length
      *
+     * @param bool $includeSynonymsAsPseudo
      * @return array
      */
-    public function findByNameLength(): array
+    public function findByNameLength(bool $includeSynonymsAsPseudo = false): array
     {
         $terms = $this->findAll()->toArray();
+
+        if (true === $includeSynonymsAsPseudo) {
+            $terms = $this->addPseudoTermsFromSynonyms(...$terms);
+        }
 
         /**
          * Sorting Callback
          *
-         * @param Term $termA
-         * @param Term $termB
+         * @param \Featdd\DpnGlossary\Domain\Model\Term $termA
+         * @param \Featdd\DpnGlossary\Domain\Model\Term $termB
          * @return int
          */
         $sortingCallback = function ($termA, $termB) {
@@ -67,7 +72,7 @@ class TermRepository extends Repository
      * @param int[] $uids
      * @return array
      */
-    public function findByUids(array $uids): array
+    public function findByUids(int... $uids): array
     {
         $query = $this->createQuery();
 
@@ -169,5 +174,23 @@ class TermRepository extends Repository
         }
 
         return $sortedTerms;
+    }
+
+    /**
+     * @param \Featdd\DpnGlossary\Domain\Model\Term[] $terms
+     * @return \Featdd\DpnGlossary\Domain\Model\Term[]
+     */
+    protected function addPseudoTermsFromSynonyms(Term... $terms)
+    {
+        /** @var \Featdd\DpnGlossary\Domain\Model\Term $term */
+        foreach ($terms as $term) {
+            $pseudoTerms = $term->getPseudoTermsFromSynonyms();
+
+            if (0 < $pseudoTerms->count()) {
+                $terms = array_merge($terms, $pseudoTerms->toArray());
+            }
+        }
+
+        return $terms;
     }
 }

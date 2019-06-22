@@ -82,11 +82,11 @@ class TermController extends ActionController
 
     public function previewSelectedAction(): void
     {
-        $previewSelectedUids = GeneralUtility::intExplode(',', $this->settings['previewSelected']);
+        $previewSelectedUids = GeneralUtility::intExplode(',', $this->settings['previewSelected'], true);
 
         $this->view->assign(
             'terms',
-            $this->termRepository->findByUids($previewSelectedUids)
+            $this->termRepository->findByUids(...$previewSelectedUids)
         );
     }
 

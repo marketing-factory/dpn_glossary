@@ -14,6 +14,7 @@ namespace Featdd\DpnGlossary\Domain\Model;
  *
  ***/
 
+use Featdd\HtmlTermWrapper\Model\TermInterface;
 use TYPO3\CMS\Extbase\DomainObject\AbstractEntity;
 use TYPO3\CMS\Extbase\Persistence\ObjectStorage;
 use TYPO3\CMS\Extbase\Domain\Model\FileReference;
@@ -22,7 +23,7 @@ use TYPO3\CMS\Extbase\Domain\Model\FileReference;
  * @package DpnGlossary
  * @subpackage Domain\Model
  */
-class Term extends AbstractEntity
+class Term extends AbstractEntity implements TermInterface
 {
     public const TABLE = 'tx_dpnglossary_domain_model_term';
 
@@ -335,6 +336,24 @@ class Term extends AbstractEntity
     public function getMedia(): ObjectStorage
     {
         return $this->media;
+    }
+
+    /**
+     * @return \TYPO3\CMS\Extbase\Persistence\ObjectStorage<\Featdd\DpnGlossary\Domain\Model\Term>
+     */
+    public function getPseudoTermsFromSynonyms(): ObjectStorage
+    {
+        $pseudoTerms = new ObjectStorage();
+
+        /** @var \Featdd\DpnGlossary\Domain\Model\Synonym $synonym */
+        foreach ($this->synonyms as $synonym) {
+            $pseudoTerm = clone $this;
+            $pseudoTerm->setName($synonym->getName());
+
+            $pseudoTerms->attach($pseudoTerm);
+        }
+
+        return $pseudoTerms;
     }
 
     /**

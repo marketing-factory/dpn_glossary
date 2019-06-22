@@ -35,13 +35,13 @@ call_user_func(
         $iconRegistry = \TYPO3\CMS\Core\Utility\GeneralUtility::makeInstance(\TYPO3\CMS\Core\Imaging\IconRegistry::class);
 
         $iconRegistry->registerIcon(
-            'ext-dpn_glossary-wizard-icon',
+            'ext-dpnglossary-wizard-icon',
             \TYPO3\CMS\Core\Imaging\IconProvider\FontawesomeIconProvider::class,
             ['name' => 'list']
         );
 
         $iconRegistry->registerIcon(
-            'ext-dpn_glossary-preview-wizard-icon',
+            'ext-dpnglossary-preview-wizard-icon',
             \TYPO3\CMS\Core\Imaging\IconProvider\FontawesomeIconProvider::class,
             ['name' => 'external-link-square']
         );

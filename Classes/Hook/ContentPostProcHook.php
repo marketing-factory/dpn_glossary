@@ -16,6 +16,8 @@ namespace Featdd\DpnGlossary\Hook;
 
 use Featdd\DpnGlossary\Service\ParserService;
 use Featdd\DpnGlossary\Utility\ObjectUtility;
+use Featdd\HtmlTermWrapper\Exception\ParserException;
+use Psr\Log\LoggerAwareTrait;
 use TYPO3\CMS\Frontend\Controller\TypoScriptFrontendController;
 
 /**
@@ -24,6 +26,8 @@ use TYPO3\CMS\Frontend\Controller\TypoScriptFrontendController;
  */
 class ContentPostProcHook
 {
+    use LoggerAwareTrait;
+
     /**
      * @var \Featdd\DpnGlossary\Service\ParserService
      */
@@ -37,14 +41,15 @@ class ContentPostProcHook
     /**
      * @param array $params
      * @param \TYPO3\CMS\Frontend\Controller\TypoScriptFrontendController $typoScriptFrontendController
-     * @throws \Featdd\DpnGlossary\Service\Exception
      */
     public function main(array &$params, TypoScriptFrontendController $typoScriptFrontendController): void
     {
-        $parsedHTML = $this->parserService->pageParser($typoScriptFrontendController->content);
-
-        if (true === is_string($parsedHTML)) {
-            $typoScriptFrontendController->content = $parsedHTML;
+        try {
+            $typoScriptFrontendController->content = $this->parserService->pageParser(
+                $typoScriptFrontendController->content
+            );
+        } catch (ParserException $exception) {
+            $this->logger->error('Error when parsing HTML for terms: "' . $exception->getMessage() . '"');
         }
     }
 }
