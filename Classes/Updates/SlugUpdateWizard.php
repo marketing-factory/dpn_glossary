@@ -134,7 +134,10 @@ class SlugUpdateWizard extends AbstractUpdateWizard
         return $queryBuilder
             ->select('pid', 'uid', 'sys_language_uid', self::SEGMENT_FIELD, self::SLUG_FIELD)
             ->from(Term::TABLE)
-            ->where($queryBuilder->expr()->isNotNull(self::SLUG_FIELD))
+            ->where($queryBuilder->expr()->eq(
+                self::SLUG_FIELD,
+                $queryBuilder->createNamedParameter('', \PDO::PARAM_STR))
+            )
             ->execute()
             ->fetchAll();
     }
